@@ -61,18 +61,41 @@ def estimate_tpm_cost(book_tokens: int) -> int:
     process_book.sh makes 2 Gemini calls: overview-skim + deep-read.
     Each call sends the full book text as input.
 
-    For books <= 800K tokens (direct path):
-      tokens * 2 + 40_000 (2 calls + output overhead)
+    With context caching (saves ~25% on the 2nd call), effective multiplier
+    is ~1.75x instead of 2x. We use 1.5x + 40K overhead for a balanced estimate
+    that avoids unnecessary waiting while still respecting TPM limits.
 
     For books > 800K tokens (Map-Reduce path):
       n_chunks * 800_000 + n_chunks * 30_000 * 2
       (each chunk is ~800K input + ~30K output, times 2 phases)
+      No context caching benefit, keep original estimate.
     """
     if book_tokens <= BOOK_TOKEN_LIMIT:
-        return book_tokens * 2 + 40_000
+        return int(book_tokens * 1.5) + 40_000
     else:
         n_chunks = (book_tokens + BOOK_TOKEN_LIMIT - 1) // BOOK_TOKEN_LIMIT
         return n_chunks * 800_000 + n_chunks * 30_000 * 2
+
+
+def _lcs_similarity(a: str, b: str) -> float:
+    """Longest Common Substring similarity ratio. Returns 0.0-1.0."""
+    if not a or not b:
+        return 0.0
+    m, n = len(a), len(b)
+    if m > n:
+        a, b = b, a
+        m, n = n, m
+    prev = [0] * (n + 1)
+    longest = 0
+    for i in range(1, m + 1):
+        curr = [0] * (n + 1)
+        for j in range(1, n + 1):
+            if a[i - 1] == b[j - 1]:
+                curr[j] = prev[j - 1] + 1
+                if curr[j] > longest:
+                    longest = curr[j]
+        prev = curr
+    return longest / min(m, n) if min(m, n) > 0 else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -199,41 +222,42 @@ def is_book_complete(category: str, title: str, author: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def find_book_file(title: str, author: str, fmt: str) -> Path | None:
-    """Find a book file in books/ directory by fuzzy matching on title keywords."""
-    # Clean title: remove punctuation for matching
-    clean_title = re.sub(r'[：:·\-—「」（）\(\)\s]', '', title)
+    """Find a book file in books/ directory by LCS similarity on title."""
+    if not BOOKS_DIR.exists():
+        return None
 
-    candidates = []
+    clean_title = re.sub(r'[：:·\-—「」（）\(\)\s]', '', title).lower()
+    if not clean_title:
+        return None
+
+    best_match = None
+    best_key = (0.0, False)  # (score, format_matches)
+    threshold = 0.4
+
     for f in BOOKS_DIR.iterdir():
         if f.is_dir():
             continue
-        fname = f.name
-        clean_fname = re.sub(r'[：:·\-—「」（）\(\)\s]', '', fname)
+        clean_fname = re.sub(r'[：:·\-—「」（）\(\)\s]', '', f.stem).lower()
+        if not clean_fname:
+            continue
+        score = _lcs_similarity(clean_title, clean_fname)
+        fmt_match = bool(fmt and f.suffix.lstrip('.').lower() == fmt.lower())
+        key = (score, fmt_match)
+        if key > best_key:
+            best_key = key
+            best_match = f
 
-        # Check if significant portion of title appears in filename
-        # Try first 2-3 characters of cleaned title
-        if len(clean_title) >= 2 and clean_title[:2] in clean_fname:
-            candidates.append(f)
-        elif len(clean_title) >= 3 and clean_title[:3] in clean_fname:
-            candidates.append(f)
+    if best_key[0] >= threshold and best_match is not None:
+        return best_match
 
-    if not candidates:
-        # Try author name
-        clean_author = re.sub(r'[\s\(\)编]', '', author)
+    # Fallback: try author name if title didn't match (min 3 chars to avoid false positives)
+    clean_author = re.sub(r'[\s\(\)编]', '', author).lower()
+    if clean_author and len(clean_author) >= 3:
         for f in BOOKS_DIR.iterdir():
             if f.is_dir():
                 continue
-            if clean_author and clean_author in f.name:
-                candidates.append(f)
-
-    if len(candidates) == 1:
-        return candidates[0]
-    elif len(candidates) > 1:
-        # Prefer the one that matches format
-        for c in candidates:
-            if c.suffix.lstrip('.') == fmt:
-                return c
-        return candidates[0]
+            if clean_author in f.name.lower():
+                return f
 
     return None
 

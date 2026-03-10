@@ -69,30 +69,60 @@ def _is_cjk(text: str) -> bool:
     return False
 
 
+def _lcs_similarity(a: str, b: str) -> float:
+    """Longest Common Substring similarity ratio. Returns 0.0-1.0."""
+    if not a or not b:
+        return 0.0
+    m, n = len(a), len(b)
+    # Optimize: use shorter string as rows
+    if m > n:
+        a, b = b, a
+        m, n = n, m
+    prev = [0] * (n + 1)
+    longest = 0
+    for i in range(1, m + 1):
+        curr = [0] * (n + 1)
+        for j in range(1, n + 1):
+            if a[i - 1] == b[j - 1]:
+                curr[j] = prev[j - 1] + 1
+                if curr[j] > longest:
+                    longest = curr[j]
+        prev = curr
+    return longest / min(m, n) if min(m, n) > 0 else 0.0
+
+
 def _book_exists_in_dir(title: str, author: str, books_dir: Path) -> str | None:
     """
     Fuzzy check if a book already exists in books_dir.
     Returns the matching filename or None.
 
-    Matches if >= 50% of the title keywords appear in any filename.
+    Uses LCS similarity >= 0.5 on cleaned title.
     """
     if not books_dir.exists():
         return None
 
-    title_clean = _strip_punctuation(title)
-    title_keywords = [w for w in title_clean.split() if len(w) > 1]
-
-    if not title_keywords:
+    # Strip punctuation AND spaces for consistent LCS comparison
+    title_clean = _strip_punctuation(title).replace(' ', '')
+    if not title_clean:
         return None
+
+    best_match = None
+    best_score = 0.0
+    threshold = 0.5
 
     for f in books_dir.iterdir():
         if not f.is_file():
             continue
-        fname = _strip_punctuation(f.stem)
-        matched = sum(1 for kw in title_keywords if kw in fname)
-        if matched >= max(1, len(title_keywords) * 0.5):
-            return f.name
+        fname_clean = _strip_punctuation(f.stem).replace(' ', '')
+        if not fname_clean:
+            continue
+        score = _lcs_similarity(title_clean, fname_clean)
+        if score > best_score:
+            best_score = score
+            best_match = f.name
 
+    if best_score >= threshold:
+        return best_match
     return None
 
 
@@ -126,6 +156,39 @@ def _clean_filename(title: str, author: str, ext: str) -> str:
         clean_author = clean_author[:40].rstrip()
 
     return f"{clean_title} - {clean_author}.{ext}"
+
+
+def _validate_file(filepath: Path) -> str | None:
+    """Validate downloaded file integrity. Returns error message or None if OK."""
+    if not filepath.exists():
+        return "file does not exist"
+
+    size = filepath.stat().st_size
+    ext = filepath.suffix.lstrip('.').lower()
+
+    # Minimum size check (most real books are >100KB)
+    min_sizes = {'epub': 100_000, 'pdf': 50_000, 'azw3': 50_000, 'mobi': 50_000, 'azw': 50_000}
+    min_size = min_sizes.get(ext, 50_000)
+    if size < min_size:
+        return f"file too small ({size:,} bytes, min {min_size:,} for .{ext})"
+
+    # Magic bytes check
+    try:
+        with open(filepath, 'rb') as f:
+            header = f.read(8)
+    except OSError as e:
+        return f"cannot read file: {e}"
+
+    if ext == 'epub':
+        # EPUB is a ZIP file — must start with PK (0x504B)
+        if not header.startswith(b'PK'):
+            return f"invalid EPUB (expected PK header, got {header[:4]!r})"
+    elif ext == 'pdf':
+        # PDF must start with %PDF
+        if not header.startswith(b'%PDF'):
+            return f"invalid PDF (expected %PDF header, got {header[:4]!r})"
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +507,25 @@ def run_download(booklist_path: Path):
                 'error': 'download returned None',
             })
             print("FAILED")
+            time.sleep(1)
+            continue
+
+        # Validate file integrity
+        validation_err = _validate_file(Path(result_path))
+        if validation_err:
+            failed += 1
+            failures.append({
+                'id': bid,
+                'title': title,
+                'md5': md5,
+                'error': f'validation failed: {validation_err}',
+            })
+            print(f"INVALID: {validation_err}")
+            # Remove invalid file
+            try:
+                Path(result_path).unlink()
+            except OSError:
+                pass
             time.sleep(1)
             continue
 

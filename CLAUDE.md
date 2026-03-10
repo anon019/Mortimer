@@ -25,6 +25,7 @@ python3 tools/gemini_analyzer.py overview-skim --book /tmp/book.txt --title "书
 python3 tools/gemini_analyzer.py deep-read     --book /tmp/book.txt --title "书名" --author "作者" --category biography
 python3 tools/gemini_analyzer.py deep-dive     --book /tmp/book.txt --title "书名" --author "作者" --category biography --topic "主题"
 python3 tools/gemini_analyzer.py ask           --book /tmp/book.txt --title "书名" --author "作者" --question "问题"
+python3 tools/gemini_analyzer.py stats                                                                          # Token usage statistics
 
 # Single-book full pipeline (extract → analyze → Obsidian)
 bash tools/process_book.sh "books/book.epub" "书名" "作者" "category" "年份" "prefix"
@@ -49,8 +50,8 @@ No test suite or linter configured. Verify tools by running them directly.
 
 | File | Purpose |
 |------|---------|
-| `tools/gemini_analyzer.py` | 4-command Gemini analysis with context cache, map-reduce, 10 category templates |
-| `tools/extract_book.py` | EPUB/PDF/TXT → plain text with chapter markers + TOC index |
+| `tools/gemini_analyzer.py` | 5-command Gemini analysis with context cache, map-reduce, 10 category templates, usage stats |
+| `tools/extract_book.py` | EPUB/PDF/TXT/AZW3/MOBI → plain text with chapter markers + TOC index |
 | `tools/annas-archive/annas.py` | Book search & download (stdlib-only, mirror fallback) |
 | `tools/process_book.sh` | Single-book full pipeline (extract → analyze → Obsidian) |
 | `tools/batch_download.py` | Batch search + download with candidate scoring and resume |
@@ -67,6 +68,7 @@ No test suite or linter configured. Verify tools by running them directly.
 | `deep-read` | 精读: 6-8 cross-chapter themes + 5 exploration angles | 1 |
 | `deep-dive` | Single-topic deep exploration | 1 per topic |
 | `ask` | Free-form Q&A, no note output | 1 |
+| `stats` | Token usage statistics (from JSONL log) | 0 |
 
 Books >800K tokens automatically use Map-Reduce (split → parallel analyze → synthesize).
 
@@ -101,8 +103,9 @@ Reading/{category}/{书名} ({作者}, {年份})/
 ## Important Notes
 
 - All Python tools are stdlib-only (zero pip dependencies)
-- `extract_book.py` requires system `pdftotext` (`brew install poppler`)
+- `extract_book.py` requires system `pdftotext` (`brew install poppler`); AZW3/MOBI support requires Calibre (`brew install calibre`)
 - Anna's Archive filenames may contain unicode characters — `batch_download.py` auto-renames to clean filenames
 - Gemini: 1M context window, 65536 max output tokens, 900K TPM limit (with 10% safety margin)
 - Result cache: 24h local cache at `/tmp/gemini_cache_*.json`, bypass with `--no-cache`
+- Token usage logged to `/tmp/gemini_usage.jsonl`, view with `gemini_analyzer.py stats`
 - The `/read` skill orchestrates everything — individual tools can also be run standalone

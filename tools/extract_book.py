@@ -267,6 +267,28 @@ def extract_pdf(pdf_path: str, output_path: str) -> dict:
     }
 
 
+def convert_to_epub(input_path: str) -> str:
+    """Convert AZW3/MOBI to EPUB via Calibre's ebook-convert. Returns temp EPUB path."""
+    if not shutil.which('ebook-convert'):
+        print("错误：需要 Calibre 的 ebook-convert 工具", file=sys.stderr)
+        print("安装：brew install calibre", file=sys.stderr)
+        sys.exit(1)
+
+    basename = os.path.splitext(os.path.basename(input_path))[0]
+    tmp_epub = f"/tmp/{basename}_converted.epub"
+
+    print(f"转换 {os.path.basename(input_path)} → EPUB...", file=sys.stderr)
+    result = subprocess.run(
+        ['ebook-convert', input_path, tmp_epub],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        print(f"ebook-convert 错误: {result.stderr[:300]}", file=sys.stderr)
+        sys.exit(1)
+
+    return tmp_epub
+
+
 def main():
     parser = argparse.ArgumentParser(description='提取书籍全文到纯文本')
     parser.add_argument('book', help='书籍文件路径 (EPUB 或 PDF)')
@@ -287,6 +309,14 @@ def main():
         info = extract_epub(book_path, args.output, min_length=args.min_length)
     elif ext == '.pdf':
         info = extract_pdf(book_path, args.output)
+    elif ext in ('.azw3', '.mobi', '.azw'):
+        tmp_epub = convert_to_epub(book_path)
+        info = extract_epub(tmp_epub, args.output, min_length=args.min_length)
+        # Clean up temp file
+        try:
+            os.remove(tmp_epub)
+        except OSError:
+            pass
     elif ext == '.txt':
         shutil.copy2(book_path, args.output)
         with open(book_path, 'r', encoding='utf-8', errors='replace') as f:

@@ -70,7 +70,10 @@ cat >> "/tmp/${TMP_PREFIX}_obs_overview.md" <<'PROGRESS'
 - [ ] 💡 深度探索（0/5 个视角已完成）
 PROGRESS
 
-obsidian create path="${BOOK_DIR}/00-概览.md" content="$(cat "/tmp/${TMP_PREFIX}_obs_overview.md")" overwrite 2>&1 | grep -v FATAL || true
+if ! obsidian create path="${BOOK_DIR}/00-概览.md" content="$(cat "/tmp/${TMP_PREFIX}_obs_overview.md")" overwrite 2>&1; then
+  echo "[${TITLE}] ERROR: Failed to write 00-概览.md to Obsidian" >&2
+  exit 1
+fi
 
 # Write skim via temp file
 cat > "/tmp/${TMP_PREFIX}_obs_skim.md" <<FRONTMATTER
@@ -82,7 +85,10 @@ parent: "[[00-概览]]"
 FRONTMATTER
 cat "$TMP_SKIM" >> "/tmp/${TMP_PREFIX}_obs_skim.md"
 
-obsidian create path="${BOOK_DIR}/01-粗读.md" content="$(cat "/tmp/${TMP_PREFIX}_obs_skim.md")" overwrite 2>&1 | grep -v FATAL || true
+if ! obsidian create path="${BOOK_DIR}/01-粗读.md" content="$(cat "/tmp/${TMP_PREFIX}_obs_skim.md")" overwrite 2>&1; then
+  echo "[${TITLE}] ERROR: Failed to write 01-粗读.md to Obsidian" >&2
+  exit 1
+fi
 
 echo "[${TITLE}] Step 5/6: Gemini deep-read..."
 python3 tools/gemini_analyzer.py deep-read \
@@ -104,6 +110,9 @@ parent: "[[00-概览]]"
 FRONTMATTER
 cat "$TMP_DEEPREAD" >> "/tmp/${TMP_PREFIX}_obs_deepread.md"
 
-obsidian create path="${BOOK_DIR}/02-精读.md" content="$(cat "/tmp/${TMP_PREFIX}_obs_deepread.md")" overwrite 2>&1 | grep -v FATAL || true
+if ! obsidian create path="${BOOK_DIR}/02-精读.md" content="$(cat "/tmp/${TMP_PREFIX}_obs_deepread.md")" overwrite 2>&1; then
+  echo "[${TITLE}] ERROR: Failed to write 02-精读.md to Obsidian" >&2
+  exit 1
+fi
 
 echo "[${TITLE}] Complete! All 3 notes written to ${BOOK_DIR}/"

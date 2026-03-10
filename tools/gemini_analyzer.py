@@ -23,6 +23,7 @@ Environment:
 """
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -42,6 +43,9 @@ CACHED_CONTENTS_URL = API_BASE + "/cachedContents"
 
 # Max tokens for book text in a single Gemini call (leave margin for prompt overhead)
 BOOK_TOKEN_LIMIT = 800_000
+
+# Token usage log
+USAGE_LOG_PATH = "/tmp/gemini_usage.jsonl"
 
 # ---------------------------------------------------------------------------
 # Gemini Context Caching (REST API)
@@ -237,6 +241,22 @@ def call_gemini(prompt: str, temperature: float = 0.4, max_tokens: int = 65536,
             f"total: {usage.get('totalTokenCount', '?')}{cache_info}",
             file=sys.stderr,
         )
+
+    # Append usage to JSONL log
+    if usage:
+        log_entry = {
+            "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+            "model": os.environ.get("GEMINI_MODEL", DEFAULT_MODEL),
+            "input_tokens": usage.get("promptTokenCount", 0),
+            "output_tokens": usage.get("candidatesTokenCount", 0),
+            "total_tokens": usage.get("totalTokenCount", 0),
+            "cached_tokens": usage.get("cachedContentTokenCount", 0),
+        }
+        try:
+            with open(USAGE_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+        except OSError:
+            pass  # Non-critical, don't fail on logging errors
 
     return text
 
@@ -666,6 +686,18 @@ DEEP_READ_PROMPT = """\
 
 ---
 
+## 延伸阅读
+
+基于本书核心主题，推荐 3-5 本高度相关的书籍。要求：
+- 必须是真实存在的书籍（书名和作者准确）
+- 与本书形成互补、对比或延伸关系
+- 优先推荐经典作品和高评分书籍
+
+对每本书：
+📚 **[书名]** — [作者] — [与本书的关系：为什么值得接着读，一句话]
+
+---
+
 请输出纯 Markdown 格式（不要用代码块包裹）。所有内容使用中文。
 
 <book>
@@ -963,6 +995,18 @@ REDUCE_DEEP_READ_PROMPT = """\
 
 ---
 
+## 延伸阅读
+
+基于本书核心主题，推荐 3-5 本高度相关的书籍。要求：
+- 必须是真实存在的书籍（书名和作者准确）
+- 与本书形成互补、对比或延伸关系
+- 优先推荐经典作品和高评分书籍
+
+对每本书：
+📚 **[书名]** — [作者] — [与本书的关系：为什么值得接着读，一句话]
+
+---
+
 请输出纯 Markdown 格式（不要用代码块包裹）。所有内容使用中文。
 
 <analyses>
@@ -1244,6 +1288,56 @@ def cmd_ask(args):
     print(result)
 
 
+def cmd_stats(args):
+    """Show token usage statistics from JSONL log."""
+    log_path = USAGE_LOG_PATH
+    if not os.path.exists(log_path):
+        print("No usage data found. Run some analyses first.")
+        return
+
+    entries = []
+    with open(log_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+    if not entries:
+        print("No valid usage entries found.")
+        return
+
+    total_input = sum(e.get("input_tokens", 0) for e in entries)
+    total_output = sum(e.get("output_tokens", 0) for e in entries)
+    total_cached = sum(e.get("cached_tokens", 0) for e in entries)
+    total_calls = len(entries)
+
+    # Group by date
+    by_date: dict[str, list] = {}
+    for e in entries:
+        date = e.get("ts", "")[:10]
+        by_date.setdefault(date, []).append(e)
+
+    print(f"{'='*50}")
+    print(f"  Gemini API Usage Statistics")
+    print(f"{'='*50}")
+    print(f"  Total API calls:     {total_calls:,}")
+    print(f"  Total input tokens:  {total_input:,}")
+    print(f"  Total output tokens: {total_output:,}")
+    print(f"  Total cached tokens: {total_cached:,}")
+    print(f"  Cache savings:       {total_cached / max(total_input, 1) * 100:.1f}%")
+    print()
+    print(f"  By date:")
+    for date in sorted(by_date.keys()):
+        day_entries = by_date[date]
+        day_input = sum(e.get("input_tokens", 0) for e in day_entries)
+        day_output = sum(e.get("output_tokens", 0) for e in day_entries)
+        print(f"    {date}: {len(day_entries)} calls, {day_input:,} in / {day_output:,} out")
+    print(f"{'='*50}")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -1301,6 +1395,9 @@ def main():
     subparsers.add_parser("ask", parents=[ask_common],
                           help="Ask a free-form question about a book")
 
+    # stats (no required args)
+    subparsers.add_parser("stats", help="Show Gemini API token usage statistics")
+
     args = parser.parse_args()
 
     commands = {
@@ -1308,6 +1405,7 @@ def main():
         "deep-read": cmd_deep_read,
         "deep-dive": cmd_deep_dive,
         "ask": cmd_ask,
+        "stats": cmd_stats,
     }
     commands[args.command](args)
 
