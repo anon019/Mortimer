@@ -2,7 +2,9 @@
 
 > 以 Mortimer J. Adler 命名——《如何阅读一本书》作者，提出阅读四层次：基础阅读→检视阅读→分析阅读→主题阅读。本项目的四阶段流程（概览→粗读→精读→深度探索）正是这一方法论的自动化实现。
 
-自动获取书籍全文，利用 Gemini 3 Flash 的 1M context window 进行全书分析，生成结构化读书笔记到 Obsidian。由 Claude Code 编排整个流程。
+自动获取书籍全文，利用 Gemini 3 Flash 的 1M context window 进行全书分析，生成结构化读书笔记到 Obsidian。
+
+![mortimer-reading-pipeline-cover](https://github.com/user-attachments/assets/9ebfebea-e210-4bba-94fb-a9e44136554a)
 
 ## 架构
 
