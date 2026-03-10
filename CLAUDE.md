@@ -17,10 +17,10 @@ Architecture: Claude orchestrates, Gemini 3 Flash (1M context) analyzes full tex
 python3 tools/annas-archive/annas.py search "title author" --format epub --limit 5
 python3 tools/annas-archive/annas.py download <md5> --output books/
 
-# Extract text from EPUB/PDF/TXT
+# Extract text from EPUB/PDF/TXT/AZW3/MOBI
 python3 tools/extract_book.py books/book.epub -o /tmp/book_full.txt
 
-# Gemini analysis (4 commands, all support --no-cache)
+# Gemini analysis (5 commands, all support --no-cache)
 python3 tools/gemini_analyzer.py overview-skim --book /tmp/book.txt --title "书名" --author "作者" --category biography
 python3 tools/gemini_analyzer.py deep-read     --book /tmp/book.txt --title "书名" --author "作者" --category biography
 python3 tools/gemini_analyzer.py deep-dive     --book /tmp/book.txt --title "书名" --author "作者" --category biography --topic "主题"
@@ -54,8 +54,8 @@ No test suite or linter configured. Verify tools by running them directly.
 | `tools/extract_book.py` | EPUB/PDF/TXT/AZW3/MOBI → plain text with chapter markers + TOC index |
 | `tools/annas-archive/annas.py` | Book search & download (stdlib-only, mirror fallback) |
 | `tools/process_book.sh` | Single-book full pipeline (extract → analyze → Obsidian) |
-| `tools/batch_download.py` | Batch search + download with candidate scoring and resume |
-| `tools/batch_read.py` | TPM-aware parallel scheduling with TokenBucket and checkpoint |
+| `tools/batch_download.py` | Batch search + download with candidate scoring, file validation, and resume |
+| `tools/batch_read.py` | TPM-aware parallel scheduling with TokenBucket, LCS matching, and checkpoint |
 | `tools/batch_verify.py` | Obsidian note completeness verification with fuzzy matching |
 | `tools/booklist_to_json.py` | Markdown booklist → JSON converter |
 | `tools/gdrive_upload.sh` | Google Drive backup via `gws` CLI |
@@ -65,7 +65,7 @@ No test suite or linter configured. Verify tools by running them directly.
 | Command | What it does | API Calls |
 |---------|-------------|-----------|
 | `overview-skim` | 概览 + 粗读 merged (saves 33% tokens) | 1 |
-| `deep-read` | 精读: 6-8 cross-chapter themes + 5 exploration angles | 1 |
+| `deep-read` | 精读: 6-8 cross-chapter themes + 5 exploration angles + 延伸阅读推荐 | 1 |
 | `deep-dive` | Single-topic deep exploration | 1 per topic |
 | `ask` | Free-form Q&A, no note output | 1 |
 | `stats` | Token usage statistics (from JSONL log) | 0 |
@@ -105,6 +105,8 @@ Reading/{category}/{书名} ({作者}, {年份})/
 - All Python tools are stdlib-only (zero pip dependencies)
 - `extract_book.py` requires system `pdftotext` (`brew install poppler`); AZW3/MOBI support requires Calibre (`brew install calibre`)
 - Anna's Archive filenames may contain unicode characters — `batch_download.py` auto-renames to clean filenames
+- Downloaded files are validated (magic bytes + min size) before processing; invalid files are auto-removed
+- Book file matching uses LCS (Longest Common Substring) similarity for fuzzy title matching
 - Gemini: 1M context window, 65536 max output tokens, 900K TPM limit (with 10% safety margin)
 - Result cache: 24h local cache at `/tmp/gemini_cache_*.json`, bypass with `--no-cache`
 - Token usage logged to `/tmp/gemini_usage.jsonl`, view with `gemini_analyzer.py stats`
