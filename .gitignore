@@ -1,0 +1,10 @@
+venv/
+.playwright-mcp/
+books/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+booklists/
+tasks/
+docs/
