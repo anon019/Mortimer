@@ -47,8 +47,15 @@ sed -n '/====SPLIT====/,$p' "$TMP_OS" | sed '1d' > "$TMP_SKIM"
 
 echo "[${TITLE}] Step 4/6: Writing overview + skim to Obsidian..."
 
+# Extract themes from first line of overview (if present) and move into frontmatter
+THEMES_YAML=""
+if head -1 "$TMP_OVERVIEW" | grep -q '^themes:'; then
+  THEMES_YAML=$(head -1 "$TMP_OVERVIEW" | sed 's/^themes: *//' | awk -F', ' '{for(i=1;i<=NF;i++) { gsub(/^ *| *$/, "", $i); printf "  - %s\n", $i }}')
+fi
+
 # Write overview via temp file to avoid shell escaping issues
-cat > "/tmp/${TMP_PREFIX}_obs_overview.md" <<FRONTMATTER
+{
+cat <<FRONTMATTER_HEAD
 ---
 title: ${TITLE}
 author: ${AUTHOR}
@@ -56,10 +63,21 @@ category: ${CATEGORY}
 date: ${DATE}
 status: reading
 source: full
----
+FRONTMATTER_HEAD
+if [ -n "$THEMES_YAML" ]; then
+  echo "themes:"
+  echo "$THEMES_YAML"
+fi
+echo "---"
+echo
+} > "/tmp/${TMP_PREFIX}_obs_overview.md"
 
-FRONTMATTER
-cat "$TMP_OVERVIEW" >> "/tmp/${TMP_PREFIX}_obs_overview.md"
+# Append body, skipping themes line if it was extracted
+if head -1 "$TMP_OVERVIEW" | grep -q '^themes:'; then
+  tail -n +2 "$TMP_OVERVIEW" >> "/tmp/${TMP_PREFIX}_obs_overview.md"
+else
+  cat "$TMP_OVERVIEW" >> "/tmp/${TMP_PREFIX}_obs_overview.md"
+fi
 cat >> "/tmp/${TMP_PREFIX}_obs_overview.md" <<'PROGRESS'
 
 ## 阅读进度
