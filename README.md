@@ -5,26 +5,44 @@
 ![mortimer-reading-pipeline-cover](https://github.com/user-attachments/assets/9ebfebea-e210-4bba-94fb-a9e44136554a)
 自动获取书籍全文，利用 Gemini 3 Flash 的 1M context window 进行全书分析，生成结构化读书笔记到 Obsidian。
 
+支持两种交互方式：**Claude Code 终端**（完整功能）和 **Claudian（Obsidian 插件）**（笔记上下文感知）。
 
 ## 架构
 
 ```
 用户 ──→ Claude Code (/read 技能编排)
-              │
-              ├─ 单本模式: 交互式四阶段阅读
-              │   书名确认 → 获取资源 → 概览+粗读+精读 → 自由探索
-              │
-              └─ 批量模式: 书单驱动全自动
-                  书单准备 → 批量搜索下载 → 并行分析 → 验证完整性
-              │
-              ├── Anna's Archive ─── 书籍搜索与下载
-              ├── extract_book.py ── EPUB/PDF/TXT 文本提取
-              ├── Gemini 3 Flash ─── 全书分析 (1M context)
-              ├── Obsidian ───────── 笔记写入
-              └── Google Drive ──── 备份 (可选)
+         │
+         ├─ 终端模式 (CLI)
+         │   └─ 完整功能：单本 + 批量 + 自由探索
+         │
+         └─ Claudian 模式 (Obsidian 内嵌)
+             └─ 同一 /read 技能，额外感知当前编辑的笔记
+         │
+         ├─ 单本模式: 交互式四阶段阅读
+         │   书名确认 → 获取资源 → 概览+粗读+精读 → 自由探索
+         │
+         └─ 批量模式: 书单驱动全自动
+             书单准备 → 批量搜索下载 → 并行分析 → 验证完整性
+         │
+         ├── Anna's Archive ─── 书籍搜索与下载
+         ├── extract_book.py ── EPUB/PDF/TXT 文本提取
+         ├── Gemini 3 Flash ─── 全书分析 (1M context)
+         ├── Obsidian ───────── 笔记写入
+         └── Google Drive ──── 备份 (可选)
 ```
 
 **分工**: Claude Code 负责编排和用户交互，Gemini 3 Flash 负责全书文本分析。Claude 从不直接读取书籍原文——所有分析通过 `gemini_analyzer.py` 完成。
+
+**两种模式对比**:
+
+| | 终端 (CLI) | Claudian (Obsidian) |
+|---|---|---|
+| 触发方式 | 终端输入 `/read 书名` | Obsidian 内输入 `/read 书名` |
+| 单本模式 | ✅ | ✅ |
+| 批量模式 | ✅ | ✅ |
+| 笔记上下文感知 | ❌ | ✅ 自动注入当前编辑的笔记 |
+| 额外进程 | 无 | 独立 Claude Code 进程 (~300MB) |
+| 适用场景 | 首次阅读、批量处理 | 在 Obsidian 中浏览笔记时追问、深度探索 |
 
 ## 功能
 
@@ -94,6 +112,41 @@ cp skill/SKILL.md ~/.claude/skills/read/SKILL.md
 
 # 编辑 SKILL.md，将 ~/coding/read 替换为你的实际克隆路径
 ```
+
+### Claudian 集成（可选）
+
+[Claudian](https://github.com/YishenTu/claudian) 是一个 Obsidian 插件，在 vault 内嵌入 Claude Code 作为 AI 协作者。安装后可直接在 Obsidian 中使用 `/read` 技能。
+
+**原理**：Claudian 通过 Claude Agent SDK 启动本机的 `claude` CLI 作为子进程，工作目录设为 Obsidian vault。它加载 user 级 skill（`~/.claude/skills/`），因此已安装的 `/read` 技能可直接使用。
+
+**配置步骤**：
+
+1. 在 Obsidian 中安装 Claudian 插件
+2. 确保 Claudian 设置中 `loadUserClaudeSettings` 为 `true`（默认已开启）
+3. 开放工具链路径——编辑 Claudian 设置（Obsidian 设置 → Claudian，或直接编辑 `.claude/claudian-settings.json`）：
+
+```json
+{
+  "persistentExternalContextPaths": [
+    "~/coding/read",
+    "/tmp"
+  ]
+}
+```
+
+> **为什么需要这一步？** Claudian 有 vault restriction hook，默认拒绝访问 vault 外路径。`~/coding/read` 是工具链目录，`/tmp` 是 Gemini 分析器的临时文件路径，两者都需要开放。
+
+4. 重启 Obsidian 或新建 Claudian 会话使配置生效
+
+**验证**：在 Claudian 中输入 `/read Atomic Habits`，应能正常启动阅读流程。
+
+**Claudian 特有优势**：
+
+在 Obsidian 中浏览已生成的读书笔记时，Claudian 会自动将当前笔记内容注入上下文。这意味着：
+
+- 打开 `02-精读.md` 后直接说"探索第 3 个视角"，无需指定书名
+- 选中一段笔记内容，问"展开讲讲这个观点"
+- 打开两本书的笔记，问"对比这两本书的观点"
 
 ### 环境变量
 
@@ -201,7 +254,8 @@ Reading/{category}/{书名} ({作者}, {年份})/
 
 | 平台 | 支持 | 说明 |
 |------|------|------|
-| Claude Code | 完整 | 安装 SKILL.md 后 `/read` 即用，单本+批量全支持 |
+| Claude Code (终端) | 完整 | 安装 SKILL.md 后 `/read` 即用，单本+批量全支持 |
+| Claudian (Obsidian) | 完整 | 需配置 `persistentExternalContextPaths`，额外支持笔记上下文感知 |
 | 其他编程工具 | 工具层 | Python 脚本独立可用，SKILL.md 可作为指令文档参考 |
 | 纯命令行 | 完全 | 所有工具都是标准 CLI，可手动使用 |
 
