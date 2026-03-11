@@ -50,7 +50,10 @@ BOOK_RE = re.compile(
 
 # Regex: match search + format line
 # e.g. "`The Nvidia Way Tae Kim` | epub"
-SEARCH_RE = re.compile(r"^`(.+?)`\s*\|\s*(\w+)")
+# Supports two formats:
+# Format A (skill doc): `search query|format`  (pipe inside backticks)
+# Format B (legacy):    `search query` | format (pipe outside backticks)
+SEARCH_RE = re.compile(r"^`(.+?)(?:\|(\w+))?`(?:\s*\|\s*(\w+))?")
 
 # Try to extract a 4-digit year from search query
 YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
@@ -95,8 +98,19 @@ def parse_booklist(md_path: Path) -> list[dict]:
             if i + 1 < len(lines):
                 search_match = SEARCH_RE.match(lines[i + 1].strip())
                 if search_match:
-                    search_query = search_match.group(1)
-                    fmt = search_match.group(2).lower()
+                    raw = search_match.group(1)
+                    # Format A: pipe inside backticks → group(2) has format
+                    # Format B: pipe outside backticks → group(3) has format
+                    fmt_a = search_match.group(2)  # from inside backticks
+                    fmt_b = search_match.group(3)  # from outside backticks
+                    if fmt_a:
+                        search_query = raw
+                        fmt = fmt_a.lower()
+                    elif fmt_b:
+                        search_query = raw
+                        fmt = fmt_b.lower()
+                    else:
+                        search_query = raw
                     i += 1  # consume the search line
 
             # Extract year from search query if present
