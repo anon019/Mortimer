@@ -128,13 +128,13 @@ cp skill/SKILL.md ~/.claude/skills/read/SKILL.md
 ```json
 {
   "persistentExternalContextPaths": [
-    "~/coding/read",
+    "<Mortimer 克隆路径>",
     "/tmp"
   ]
 }
 ```
 
-> **为什么需要这一步？** Claudian 有 vault restriction hook，默认拒绝访问 vault 外路径。`~/coding/read` 是工具链目录，`/tmp` 是 Gemini 分析器的临时文件路径，两者都需要开放。
+> **为什么需要这一步？** Claudian 有 vault restriction hook，默认拒绝访问 vault 外路径。Mortimer 克隆路径是工具链目录，`/tmp` 是 Gemini 分析器的临时文件路径，两者都需要开放。
 
 4. 重启 Obsidian 或新建 Claudian 会话使配置生效
 
